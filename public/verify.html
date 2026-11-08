@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pickup check - Example Bakery</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; max-width: 480px; margin: 32px auto; padding: 0 20px; }
+    input, button { box-sizing: border-box; width: 100%; padding: 12px; margin: 8px 0; font: inherit; }
+    button { background: #8b4c2d; color: white; border: 0; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Pickup check</h1>
+  <p id="details">Loading...</p>
+  <form id="form" hidden>
+    <label>Staff PIN <input id="pin" type="password" required></label>
+    <button>Confirm pickup</button>
+  </form>
+  <p id="message" role="alert"></p>
+  <script>
+    const token = new URLSearchParams(location.search).get('token');
+    const details = document.getElementById('details');
+    const form = document.getElementById('form');
+    const message = document.getElementById('message');
+    async function load() {
+      if (!token) throw new Error('Missing QR token.');
+      const response = await fetch('/api/pickups/' + encodeURIComponent(token));
+      if (!response.ok) throw new Error('Order not found.');
+      const order = await response.json();
+      details.textContent = order.productName + ' - Pickup date: ' +
+        order.pickupDate + ' - Status: ' + order.status;
+      form.hidden = order.status !== 'paid';
+    }
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      message.textContent = '';
+      const response = await fetch('/api/pickups/' + encodeURIComponent(token) + '/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: document.getElementById('pin').value })
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        message.textContent = data.error || 'Please try again.';
+        return;
+      }
+      document.getElementById('pin').value = '';
+      await load();
+      message.textContent = 'Pickup confirmed.';
+    });
+    load().catch(error => { details.textContent = error.message; });
+  </script>
+</body>
+</html>
