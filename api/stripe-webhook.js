@@ -1,6 +1,7 @@
 const express = require('express');
 const Stripe = require('stripe');
 const supabase = require('../lib/supabase');
+const { supportedPaymentPurpose } = require('../lib/order-flow');
 
 const app = express();
 app.post('*', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -17,7 +18,7 @@ app.post('*', express.raw({ type: 'application/json' }), async (req, res) => {
   }
   if (event.type !== 'payment_intent.succeeded') return res.sendStatus(200);
   const payment = event.data.object;
-  if (payment.metadata?.giftType !== 'gift' || !payment.metadata?.orderId) {
+  if (!supportedPaymentPurpose(payment.metadata) || !payment.metadata?.orderId) {
     return res.sendStatus(200);
   }
   const { error } = await supabase.from('orders').update({ status: 'paid' })

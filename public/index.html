@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>Example Bakery</title>
   <style>
     body { font: 16px system-ui, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 20px; color: #332b24; }
@@ -22,6 +23,10 @@
   <form id="order-form">
     <label>Product <select id="product" required></select></label>
     <label>Pickup date <input id="pickup-date" type="date" required></label>
+    <label>Purpose <select id="order-purpose" required>
+      <option value="self">For myself</option>
+      <option value="gift">As a gift</option>
+    </select></label>
     <button id="order-button">Order</button>
   </form>
   <section id="payment" hidden>
@@ -44,7 +49,7 @@
     const message = document.getElementById('message');
     let stripe;
     let elements;
-    let orderId;
+    let orderToken;
 
     async function api(url, options) {
       const response = await fetch(url, options);
@@ -101,10 +106,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             productId: document.getElementById('product').value,
-            pickupDate: document.getElementById('pickup-date').value
+            pickupDate: document.getElementById('pickup-date').value,
+            orderPurpose: document.getElementById('order-purpose').value
           })
         });
-        orderId = order.orderId;
+        orderToken = order.orderToken;
         elements = stripe.elements({ clientSecret: order.clientSecret });
         elements.create('payment').mount('#payment-element');
         payment.hidden = false;
@@ -119,7 +125,7 @@
       button.disabled = true;
       message.textContent = '';
       const returnUrl = new URL('/', location.origin);
-      returnUrl.searchParams.set('order', orderId);
+      returnUrl.searchParams.set('order', orderToken);
       const result = await stripe.confirmPayment({
         elements,
         confirmParams: { return_url: returnUrl.toString() },
@@ -129,7 +135,7 @@
         showError(result.error);
         button.disabled = false;
       } else {
-        await showOrder(orderId).catch(showError);
+        await showOrder(orderToken).catch(showError);
       }
     });
 

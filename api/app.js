@@ -42,9 +42,11 @@ app.get('/api/products', async (req, res) => {
 });
 
 app.post('/api/orders', async (req, res) => {
-  const { productId, pickupDate } = req.body || {};
-  if (typeof productId !== 'string' || !validDate(pickupDate)) {
-    return res.status(400).json({ error: 'Select a product and pickup date.' });
+  const { productId, pickupDate, orderPurpose: requestedPurpose } = req.body || {};
+  const orderPurpose = requestedPurpose === undefined ? 'self' : requestedPurpose;
+  if (typeof productId !== 'string' || !validDate(pickupDate) ||
+      !['self', 'gift'].includes(orderPurpose)) {
+    return res.status(400).json({ error: 'Select a product, pickup date and purpose.' });
   }
   const { data: product, error: productError } = await supabase.from('products')
     .select('id,name,amount').eq('id', productId).eq('is_active', true).maybeSingle();
@@ -53,6 +55,7 @@ app.post('/api/orders', async (req, res) => {
     return res.status(400).json({ error: 'Product unavailable.' });
   }
   const id = crypto.randomUUID();
+  const accessToken = crypto.randomUUID();
   const qrToken = crypto.randomUUID();
   let payment;
   try {
@@ -60,7 +63,7 @@ app.post('/api/orders', async (req, res) => {
       amount: product.amount,
       currency: 'jpy',
       automatic_payment_methods: { enabled: true },
-      metadata: { giftType: 'gift', orderId: id }
+      metadata: { orderPurpose, orderId: id }
     });
     const { error } = await supabase.from('orders').insert({
       id,
@@ -68,11 +71,13 @@ app.post('/api/orders', async (req, res) => {
       product_name: product.name,
       amount: product.amount,
       pickup_date: pickupDate,
+      order_purpose: orderPurpose,
+      access_token: accessToken,
       qr_token: qrToken,
       stripe_payment_intent_id: payment.id
     });
     if (error) throw error;
-    res.status(201).json({ orderId: id, clientSecret: payment.client_secret });
+    res.status(201).json({ orderToken: accessToken, clientSecret: payment.client_secret });
   } catch (error) {
     if (payment) {
       try { await stripe().paymentIntents.cancel(payment.id); } catch (cancelError) { console.error(cancelError); }
@@ -81,15 +86,15 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-app.get('/api/orders/:id', async (req, res) => {
-  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.sendStatus(404);
+app.get('/api/orders/:token', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.token)) return res.sendStatus(404);
   const { data: order, error } = await supabase.from('orders')
-    .select('id,product_name,amount,pickup_date,status,qr_token')
-    .eq('id', req.params.id).maybeSingle();
+    .select('product_name,amount,pickup_date,status,qr_token')
+    .eq('access_token', req.params.token).maybeSingle();
   if (error) return errorResponse(res, error);
   if (!order) return res.sendStatus(404);
   const result = {
-    id: order.id,
     productName: order.product_name,
     amount: order.amount,
     pickupDate: order.pickup_date,
@@ -106,6 +111,7 @@ app.get('/api/orders/:id', async (req, res) => {
 });
 
 app.get('/api/pickups/:token', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   if (!/^[0-9a-f-]{36}$/i.test(req.params.token)) return res.sendStatus(404);
   const { data, error } = await supabase.from('orders')
     .select('product_name,pickup_date,status').eq('qr_token', req.params.token).maybeSingle();

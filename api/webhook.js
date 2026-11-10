@@ -15,7 +15,8 @@ app.post('*', express.raw({ type: 'application/json' }), async (req, res) => {
   } catch {
     return res.status(400).send('Invalid JSON.');
   }
-  const url = process.env.BASE_URL || 'https://example.com';
+  const url = process.env.BASE_URL;
+  if (!url) return res.status(500).send('BASE_URL is missing.');
   try {
     for (const event of body.events || []) {
       if (event.type !== 'follow' &&
